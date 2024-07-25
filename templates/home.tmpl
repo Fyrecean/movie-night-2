@@ -1,0 +1,64 @@
+{{template "head"}}
+
+<p>The show starts {{.EventDate}} at {{.StartTime}}. Doors will open at {{.DoorTime}}.</p>
+
+{{if not .IsSignedIn}}
+    <p>
+        Sign in to RSVP and vote on what movie we're watching!
+    </p>
+    <div id="login-forms">
+        <form id="registration-form" action="/api/register" method="POST">
+            <h3 class="section-header">New Here?</h3>
+            <div>
+                <label for="first-name">First Name:</label>
+                <input type="text" id="first-name" name="first_name" required>
+            </div>
+            <div>
+                <label for="last-name">Last Name:</label>
+                <input type="text" id="last-name" name="last_name" required>
+            </div>
+            <div>
+                <label for="phone">Phone Number:</label>
+                <input type="tel" id="phone" name="phone" required>
+            </div>
+            <div>
+                <button type="submit">Register</button>
+            </div>
+        </form>
+        <form id="sign-in-form" action="/api/sign-in" method="POST">
+            <h3 class="section-header">Sign back in</h3>
+            <div>
+                <label for="phone">Phone Number:</label>
+                <input type="tel" id="phone" name="phone" required>
+            </div>
+            <div>
+                <button type="submit">Sign In</button>
+            </div>
+        </form>
+    </div>
+{{else}}
+    <div id="welcome">
+        Welcome, {{.Name}}!
+        <form id="logout-form" action="/api/logout" method="POST">
+            <button id="logout-button" type="submit">Not you? Sign out</button>
+        </form>
+    </div>
+    {{if .IsRSVPed}}
+        <form id="rsvp-form" action="/api/rsvp/no" method="POST">
+            <h3 class="section-header">Can't make it anymore?</h3>
+            <div>
+                <button type="submit">Cancel my RSVP</button>
+            </div>
+        </form>
+    {{else}}
+        <form id="rsvp-form" action="/api/rsvp/yes" method="POST">
+            <h3 class="section-header">Will you be attending?</h3>
+            <div>
+                <button type="submit">RSVP Me!</button>
+            </div>
+        </form>
+    {{end}}
+{{end}}
+
+{{template "foot"}}
+<script src="scripts/home.js"></script>

@@ -1,0 +1,10 @@
+{{template "head"}}
+<p>
+    <h1>Attendees</h1>
+    <ul>
+        {{range $name := .Attendees}}
+        <li>{{$name}}</li>
+        {{end}}
+    </ul>
+</p>
+{{template "foot"}}
