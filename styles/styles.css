@@ -113,6 +113,17 @@ form button:active {
     background-color: hsl(34, 57%, 63%);
 }
 
+.form-error {
+    border: 2px solid firebrick;
+    border-radius: 3px;
+}
+
+.error {
+    font-size: 8pt;
+    color: firebrick;
+    margin-top: .1rem;
+}
+
 /* Home */
 #login-forms {
     display: flex;

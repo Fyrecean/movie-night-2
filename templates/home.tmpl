@@ -18,8 +18,8 @@
                 <input type="text" id="last-name" name="last_name" required>
             </div>
             <div>
-                <label for="phone">Phone Number:</label>
-                <input type="tel" id="phone" name="phone" required>
+                <label for="register-phone">Phone Number:</label>
+                <input type="tel" id="register-phone" name="phone" required pattern="[0-9]{10}">
             </div>
             <div>
                 <button type="submit">Register</button>
@@ -28,8 +28,8 @@
         <form id="sign-in-form" action="/api/sign-in" method="POST">
             <h3 class="section-header">Sign back in</h3>
             <div>
-                <label for="phone">Phone Number:</label>
-                <input type="tel" id="phone" name="phone" required>
+                <label for="sign-in-phone">Phone Number:</label>
+                <input type="tel" id="sign-in-phone" name="phone" required>
             </div>
             <div>
                 <button type="submit">Sign In</button>

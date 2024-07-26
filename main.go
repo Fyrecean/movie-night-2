@@ -4,11 +4,12 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"html/template"
-	"log"
 	"net/http"
 	"time"
+	"unicode"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -152,20 +153,48 @@ func userIsRSVPed(event_id int, user_id int) bool {
 	return q.Scan() != sql.ErrNoRows
 }
 
+func phoneNumberValidator(phone string) (string, error) {
+	var digits []rune
+	for _, char := range phone {
+		if unicode.IsDigit(char) {
+			digits = append(digits, char)
+		}
+	}
+
+	if len(digits) != 10 {
+		return "", errors.New("Phone number must be 10 digits long")
+	}
+
+	return string(digits), nil
+}
+
 func registrationHandler(w http.ResponseWriter, r *http.Request) {
 	first_name := r.FormValue("first_name")
 	last_name := r.FormValue("last_name")
 	phone := r.FormValue("phone")
-	stmt := "INSERT INTO users (first_name, last_name, phone) VALUES (?, ?, ?);"
-	_, err := db.Exec(stmt, first_name, last_name, phone)
+	phone, err := phoneNumberValidator(phone)
 	if err != nil {
-		log.Fatalln("Inserting user failed:", err)
+		http.Error(w, "Invalid phone number", http.StatusBadRequest)
+	}
+	stmt := "INSERT INTO users (first_name, last_name, phone) VALUES (?, ?, ?);"
+	_, err = db.Exec(stmt, first_name, last_name, phone)
+	if err != nil && err.Error() == "UNIQUE constraint failed: users.phone" {
+		http.Error(w, "{\"field\": \"phone\", \"error\": \"Phone number in use. Try signing in\"}", http.StatusBadRequest)
+		return
+	} else if err != nil {
+		http.Error(w, "Failed to create user", http.StatusInternalServerError)
+		fmt.Println("Inserting user failed:", err)
+		return
 	}
 	signin(w, phone)
 }
 
 func signinHandler(w http.ResponseWriter, r *http.Request) {
 	phone := r.FormValue("phone")
+	phone, err := phoneNumberValidator(phone)
+	if err != nil {
+		http.Error(w, "{\"field\": \"phone\", \"error\": \""+err.Error()+"\"}", http.StatusBadRequest)
+	}
 	signin(w, phone)
 }
 
@@ -192,6 +221,7 @@ func rsvpHandler(w http.ResponseWriter, r *http.Request) {
 	event_id, _, err := getNextEvent()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		fmt.Println("rsvp handler - Failed to retrieve next event:", err)
 		return
 	}
 	if attending == "yes" {
@@ -215,12 +245,12 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 	t, err := template.ParseFiles("templates/boilerplate.tmpl", "templates/home.tmpl")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
 	}
 
 	event_id, event_time, err := getNextEvent()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		fmt.Println("rsvp handler - Failed to retrieve next event:", err)
 		return
 	}
 
