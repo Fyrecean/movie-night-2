@@ -171,3 +171,25 @@ form button:active {
     border: 4px solid hsl(34, 57%, 20%);
     border-radius: 5px;
 }
+
+#otp-form {
+    margin: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+#otp-form input {
+    width: 6rem;
+}
+
+#otp-form-buttons {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+#otp-go-back {
+    font-size: 8pt;
+    height: 60%;
+}

@@ -7,6 +7,7 @@
 
 <div class="main">
     <a href="/"><h1 id="title">Hay Fever Theater</h1></a>
+    {{if .}}
     <div id="nav-bar">
         <nav>
             <a href="/vote">Pick the Movie</a>
@@ -14,10 +15,12 @@
             <a href="/directions">How to Get Here</a>
         </nav>
     </div>
+    {{end}}
     <div id="the-stuff">
 {{end}}
 
 {{define "foot"}}
     <div>
 </div>
+<script src="/scripts/boilerplate.js"></script>
 {{end}}

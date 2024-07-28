@@ -1,8 +1,21 @@
 {{template "head"}}
 
+{{if .Expired}}
+    <p>Code expired.</p>
+    <button type="button" onclick="window.location.href='/'">Go Back</button>
+{{else}}
+<p>Enter the single use password sent to to {{.Phone}}. The code expires in 5 minutes.</p>
 <form id="otp-form" action="/api/otp" method="POST">
-    <label for="otp">Enter code:</label>
-    <input id="otp" type="text" name="otp" required pattern="[0-9]{5}">
+    <span>
+        <label for="otp">Enter code:</label>
+        <input id="otp" type="text" name="otp" required pattern="[0-9]{5}">
+    </span>
+    <div id="otp-form-buttons">
+        <button type="submit">Submit</button>
+        <button id="otp-go-back" type="button" onclick="window.location.href='/'">Go Back</button>
+    </div>
 </form>
+{{end}}
 
 {{template "foot"}}
+<script src="/scripts/otp.js"></script>
