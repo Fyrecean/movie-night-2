@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"time"
 	"unicode"
+	"math/big"
+	"strconv"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -24,7 +26,7 @@ func initDB() {
 		panic(err)
 	}
 	sql_make_tables := "CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY ASC, first_name string, last_name string, phone string unique);" +
-		"CREATE TABLE IF NOT EXISTS sessions (session_id STRING PRIMARY KEY, user_id integer, FOREIGN KEY (user_id) REFERENCES users(user_id) );" +
+		"CREATE TABLE IF NOT EXISTS sessions (session_id STRING PRIMARY KEY, user_id integer, authenticated bool, otp integer, otp_expiration text, FOREIGN KEY (user_id) REFERENCES users(user_id) );" +
 		"CREATE TABLE IF NOT EXISTS events (event_id INTEGER PRIMARY KEY ASC, event_time TEXT);" +
 		"INSERT OR IGNORE INTO events (event_id, event_time) VALUES (1, '" + time.Now().AddDate(0, 0, 1).Format(time.RFC3339) + "');" +
 		"CREATE TABLE IF NOT EXISTS reservations (event_id INTEGER, user_id INTEGER, PRIMARY KEY (event_id, user_id) FOREIGN KEY (event_id) REFERENCES events(event_id), FOREIGN KEY (user_id) REFERENCES users(user_id));"
@@ -43,6 +45,7 @@ func main() {
 	http.HandleFunc("/vote", voteHandler)
 	http.HandleFunc("/attendees", attendeesHandler)
 	http.HandleFunc("/directions", directionsHandler)
+	http.HandleFunc("/otp", otpPageHandler)
 	// http.HandleFunc("/admin", homeHandler)
 
 	http.HandleFunc("POST /api/register", registrationHandler)
@@ -56,7 +59,8 @@ func main() {
 	http.Handle("/scripts/", http.StripPrefix("/scripts/", http.FileServer(http.Dir("scripts"))))
 	http.Handle("/img/", http.StripPrefix("/img/", http.FileServer(http.Dir("img"))))
 
-	err := http.ListenAndServeTLS(":4343", "secrets/carter-server.crt", "secrets/carter-server.key", nil)
+	//err := http.ListenAndServeTLS(":4343", "secrets/carter-server.crt", "secrets/carter-server.key", nil)
+	err := http.ListenAndServe(":8080", nil)
 	panic(err)
 }
 
@@ -69,46 +73,63 @@ func generateToken(length int) (string, error) {
 	return base64.URLEncoding.EncodeToString(b), nil
 }
 
-func signin(w http.ResponseWriter, phone string) {
-	q := db.QueryRow("SELECT user_id FROM users WHERE phone=?", phone)
-	var user_id string
-	err := q.Scan(&user_id)
-	if err != nil || user_id == "" {
-		// TODO - respond with a "user not found"
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
+func generateOTP() (int, error) {
+    //var bigRando := new(big.Int)
+    max := new(big.Int)
+    max.SetInt64(89999)
+    bigRando, err := rand.Int(rand.Reader, max)
+    return int(bigRando.Int64()) + 10000, err
+}
 
-	sessionToken, err := generateToken(32)
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
+func signin(w http.ResponseWriter, r *http.Request, phone string) {
+    q := db.QueryRow("SELECT user_id FROM users WHERE phone=?", phone)
+    var user_id string
+    err := q.Scan(&user_id)
+    if err != nil || user_id == "" {
+	http.Error(w, "{\"field\": \"phone\", \"error\": \"User not found\"}", http.StatusBadRequest)
+	fmt.Println("User not found")
+	return
+    }
 
-	stmt := "INSERT INTO sessions (session_id, user_id) VALUES (?, ?);"
-	db.Exec(stmt, sessionToken, user_id)
+    sessionToken, err := generateToken(32)
+    if err != nil {
+	http.Error(w, "Internal server error", http.StatusInternalServerError)
+	fmt.Println("generateToken failed")
+	return
+    }
 
-	// Set the session token in a cookie
-	http.SetCookie(w, &http.Cookie{
-		Name:     "Session",
-		Value:    sessionToken,
-		Expires:  time.Now().AddDate(0, 6, 0),
-		Path:     "/",  // Cookie is accessible throughout the site
-		HttpOnly: true, // Helps mitigate risk of client side script accessing the protected cookie
-		Secure:   true, // Ensure the cookie is sent over HTTPS
-	})
+    otp, err := generateOTP()
+    if err != nil {
+	http.Error(w, "Internal server error", http.StatusInternalServerError)
+	fmt.Println("generateOTP failed")
+	return
+    }
+
+    stmt := "INSERT OR REPLACE INTO sessions (session_id, user_id, authenticated, otp, otp_expiration) VALUES (?, ?, ?, ?, ?);"
+
+    db.Exec(stmt, sessionToken, user_id, false, otp, time.Now().Add(time.Minute * 5))
+    fmt.Println("OTP", otp, "for", sessionToken, "-", user_id)
+    // Set the session token in a cookie
+    http.SetCookie(w, &http.Cookie{
+	Name:     "Session",
+	Value:    sessionToken,
+	Expires:  time.Now().AddDate(0, 6, 0),
+	Path:     "/",  // Cookie is accessible throughout the site
+	HttpOnly: true, // Helps mitigate risk of client side script accessing the protected cookie
+	Secure:   true, // Ensure the cookie is sent over HTTPS
+    })
+    http.Redirect(w, r, "/otp", http.StatusOK)
 }
 
 func getUserFromSession(r *http.Request) (sessionFound bool, user_id int, first_name string) {
 	cookie, err := r.Cookie("Session")
 	if err != nil {
-		return false, 0, ""
+	    return false, 0, ""
 	}
 	stmt := "SELECT users.user_id, users.first_name FROM sessions INNER JOIN users ON users.user_id=sessions.user_id " +
-		"WHERE session_id = ?;"
+		"WHERE session_id = ? AND authenticated=true;"
 	q := db.QueryRow(stmt, cookie.Value)
 	err = q.Scan(&user_id, &first_name)
-	fmt.Println("Signed in:", user_id, err, cookie.Value)
 	if err != nil {
 		return false, 0, ""
 	}
@@ -186,7 +207,7 @@ func registrationHandler(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("Inserting user failed:", err)
 		return
 	}
-	signin(w, phone)
+	signin(w, r, phone)
 }
 
 func signinHandler(w http.ResponseWriter, r *http.Request) {
@@ -195,13 +216,76 @@ func signinHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "{\"field\": \"phone\", \"error\": \""+err.Error()+"\"}", http.StatusBadRequest)
 	}
-	signin(w, phone)
+	signin(w, r, phone)
+}
+
+func otpPageHandler(w http.ResponseWriter, r *http.Request) {
+    t, err := template.ParseFiles("templates/boilerplate.tmpl", "templates/otp.tmpl")    
+    if err != nil {
+	panic("Failed to parse otpPage")
+    }
+    cookie, err := r.Cookie("Session")
+    if err != nil {
+	http.Error(w, "Not logged in", http.StatusBadRequest)
+	return
+    }
+    stmt := "SELECT authenticated, otp, otp_expiration FROM sessions WHERE session_id=?;"
+    q := db.QueryRow(stmt, cookie.Value)
+    var authenticated bool
+    var otp int
+    var otp_expiration_str string
+    err = q.Scan(&authenticated, &otp, &otp_expiration_str)
+    if err != nil {
+	http.Error(w, "Not logged in", http.StatusBadRequest)
+	return
+    }
+    otp_expiration, err := time.Parse(time.RFC3339, otp_expiration_str)
+    if authenticated || err != nil || time.Now().After(otp_expiration) {
+	fmt.Println(authenticated, err, otp_expiration)
+	http.Error(w, "No code available", http.StatusBadRequest)
+	return
+    }
+ 
+    t.ExecuteTemplate(w, "otp.tmpl", nil)
+}
+
+func otpApiHandler(w http.ResponseWriter, r *http.Request) {
+    otp, _ := strconv.Atoi(r.FormValue("otp"))
+    cookie, err := r.Cookie("Session")
+    sessionToken := cookie.Value
+    if err != nil {
+	http.Error(w, "{\"field\": \"phone\", \"error\": \""+err.Error()+"\"}", http.StatusBadRequest)
+	return
+    }
+    stmt := "SELECT otp, otp_expiration FROM sessions WHERE session_id = ?;"
+    q := db.QueryRow(stmt, sessionToken)
+    var db_otp int
+    var otp_expiration_str string
+    err = q.Scan(&db_otp, &otp_expiration_str)
+    if err != nil {
+	http.Error(w, "{\"field\": \"phone\", \"error\": \""+err.Error()+"\"}", http.StatusBadRequest)
+	return
+    }
+    otp_expiration, err := time.Parse(time.RFC3339, otp_expiration_str)
+    if err != nil || time.Now().After(otp_expiration) {
+	http.Error(w, "{\"field\": \"otp\", \"error\": \"Session expired. Try signing in again.\"}", http.StatusBadRequest)
+	return
+    }
+    if otp != db_otp {
+	http.Error(w, "{\"field\": \"otp\", \"error\": \"Incorrect code.\"}", http.StatusBadRequest)
+	return
+    }
+    stmt = "UPDATE sessions SET authenticated = true WHERE session_id = ?;"
+    _, err = db.Exec(stmt, sessionToken)
+    if err != nil {
+	http.Error(w, "Server failed to do it's job, sorry", http.StatusInternalServerError)
+    }
 }
 
 func logoutHandler(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("Session")
 	if err != nil {
-		return
+	    return
 	}
 	stmt := "DELETE FROM sessions WHERE session_id = ?"
 	db.Exec(stmt, cookie.Value)

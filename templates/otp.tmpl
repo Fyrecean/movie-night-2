@@ -1,0 +1,8 @@
+{{template "head"}}
+
+<form id="otp-form" action="/api/otp" method="POST">
+    <label for="otp">Enter code:</label>
+    <input id="otp" type="text" name="otp" required pattern="[0-9]{5}">
+</form>
+
+{{template "foot"}}
