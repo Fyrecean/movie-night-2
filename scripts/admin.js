@@ -1,3 +1,41 @@
+document.addEventListener('DOMContentLoaded', async function () {
+    const movie_form = document.getElementById('admin-suggestion');
+    movie_form.addEventListener('submit', async function (event) {
+        event.preventDefault();
+        const apiKey = movie_form.getAttribute('apiKey');
+        
+        const formData = new FormData(movie_form);
+        response = await fetch("https://api.themoviedb.org/3/movie/" + formData.get("movie-id") + "?api_key="+apiKey);
+        json = await response.json();
+        formData.append("title", json.title);
+        formData.append("year", json.release_date.split("-")[0]);
+        formData.append("runtime", json.runtime);
+        formData.append("path", json.poster_path);
+
+        const url = movie_form.getAttribute("action")
+        fetch(url, {
+            method: 'POST',
+            body: formData
+        }).then(response => {
+            if (response.ok) {
+                if (redirect) {
+                    window.location.href = redirect
+                } else {
+                    location.reload()
+                }
+            } else {
+                response.json().then(json => {
+                    const bad_field = form.elements[json.field]
+                    if (!bad_field.classList.contains("form-error")) {
+                        bad_field.classList.add("form-error");
+                        bad_field.insertAdjacentHTML('afterend', '<p class="error">'+ json.error +'</p>');
+                    }
+                });
+            }
+        }).catch(error => console.error(error));
+    });
+});
+
 function loadMovie() {
     const formEl = document.getElementById("admin-suggestion");
     const apiKey = formEl.getAttribute('apiKey');

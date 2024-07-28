@@ -56,7 +56,7 @@ func main() {
 	http.HandleFunc("POST /api/logout", logoutHandler)
 	http.HandleFunc("POST /api/rsvp/{type}", rsvpHandler)
 	http.HandleFunc("POST /api/otp", otpApiHandler)
-	http.HandleFunc("POST /api/admin/add-suggestion/{id}", adminSuggestionHandler)
+	http.HandleFunc("POST /api/admin/add-movie", adminSuggestionHandler)
 	http.HandleFunc("POST /api/admin/schedule-event/{time}", adminScheduleHandler)
 
 	http.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "favicon.ico") })
@@ -66,6 +66,7 @@ func main() {
 	http.Handle("/img/", http.StripPrefix("/img/", http.FileServer(http.Dir("img"))))
 
 	err := http.ListenAndServeTLS(":4343", "secrets/carter-server.crt", "secrets/carter-server.key", nil)
+	// err := http.ListenAndServeTLS(":443", "/etc/letsencrypt/live/movies.fyrecean.com/fullchain.pem", "/etc/letsencrypt/live/movies.fyrecean.com/privkey.pem", nil)
 	// err := http.ListenAndServe(":8080", nil)
 	panic(err)
 }
@@ -103,17 +104,17 @@ func signin(w http.ResponseWriter, r *http.Request, phone string) {
 		return
 	}
 
-	otp, err := generateOTP()
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		fmt.Println("generateOTP failed")
-		return
-	}
+	// otp, err := generateOTP()
+	// if err != nil {
+	// 	http.Error(w, "Internal server error", http.StatusInternalServerError)
+	// 	fmt.Println("generateOTP failed")
+	// 	return
+	// }
 
 	stmt := "INSERT OR REPLACE INTO sessions (session_id, user_id, authenticated, otp, otp_expiration) VALUES (?, ?, ?, ?, ?);"
-
-	db.Exec(stmt, sessionToken, user_id, false, otp, time.Now().Add(time.Minute*5).Format(time.RFC3339))
-	fmt.Println("OTP", otp, "for", sessionToken, "-", user_id)
+	// TODO - replace 0 with otp and uncomment
+	db.Exec(stmt, sessionToken, user_id, true, 0, time.Now().Add(time.Minute*5).Format(time.RFC3339))
+	//fmt.Println("OTP", otp, "for", sessionToken, "-", user_id)
 	// Set the session token in a cookie
 	http.SetCookie(w, &http.Cookie{
 		Name:     "Session",
@@ -123,7 +124,6 @@ func signin(w http.ResponseWriter, r *http.Request, phone string) {
 		HttpOnly: true, // Helps mitigate risk of client side script accessing the protected cookie
 		Secure:   true, // Ensure the cookie is sent over HTTPS
 	})
-	http.Redirect(w, r, "/otp", http.StatusOK)
 }
 
 func getUserFromSession(r *http.Request) (sessionFound bool, user_id int, first_name string) {
@@ -424,8 +424,18 @@ func attendeesHandler(w http.ResponseWriter, r *http.Request) {
 	t.ExecuteTemplate(w, "attendees.tmpl", p)
 }
 
+type Movie struct {
+	PosterURL string
+	Title     string
+	Year      string
+	Runtime   string
+	votes     int
+}
+
 type tmpl_Vote struct {
 	IsSignedIn bool
+	ShowTime   string
+	Movies     []Movie
 }
 
 func voteHandler(w http.ResponseWriter, r *http.Request) {
@@ -436,8 +446,40 @@ func voteHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	event_id, event_time, _ := getNextEvent()
+
+	stmt := "SELECT s.poster_url, s.movie_title, s.movie_year, s.runtime, IFNULL(v.total_votes, 0) AS total_votes " +
+		"FROM suggestions s " +
+		"LEFT JOIN ( " +
+		"	SELECT suggestion_id, SUM(vote) AS total_votes " +
+		"	FROM votes " +
+		"	GROUP BY suggestion_id " +
+		") v ON s.suggestion_id = v.suggestion_id " +
+		"WHERE s.event_id = ?;"
+
+	//rows, err := db.Query("SELECT poster_url, movie_title, movie_year, runtime FROM suggestions WHERE event_id=?;", event_id)
+	rows, err := db.Query(stmt, event_id)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	defer rows.Close()
+
+	var movies []Movie
+	for rows.Next() {
+		var movie Movie
+		if err := rows.Scan(&movie.PosterURL, &movie.Title, &movie.Year, &movie.Runtime, &movie.votes); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		movies = append(movies, movie)
+	}
+
 	p := tmpl_Vote{
 		IsSignedIn: true,
+		ShowTime:   event_time.Format("3:04PM"),
+		Movies:     movies,
 	}
 	t.ExecuteTemplate(w, "vote.tmpl", p)
 }
@@ -499,5 +541,20 @@ func adminSuggestionHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Not authorized!", http.StatusBadRequest)
 		return
 	}
+
+	event_id, _, _ := getNextEvent()
+
 	//movie_id := r.PathValue("id")
+	title := r.FormValue("title")
+	year := r.FormValue("year")
+	runtime, _ := strconv.Atoi(r.FormValue("runtime"))
+	path := r.FormValue("path")
+	_, err := db.Exec("INSERT INTO suggestions (user_id, event_id, movie_title, movie_year, runtime, poster_url) VALUES (?,?,?,?,?,?);",
+		1, event_id, title, year, runtime, path)
+	if err != nil {
+		fmt.Println("Fucky wucky", title, year, runtime, path)
+		fmt.Println(err.Error())
+		return
+	}
+
 }

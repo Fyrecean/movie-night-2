@@ -193,3 +193,22 @@ form button:active {
     font-size: 8pt;
     height: 60%;
 }
+
+.movie-row {
+    margin-bottom: 5px;
+    display: flex;
+    flex-direction: row;
+}
+
+.movie-title-box {
+    margin-left: 5px;
+}
+
+.movie-title {
+    margin-bottom: .5rem;
+}
+
+.movie-meta {
+    margin-top: .25rem;
+    margin-bottom: .25rem;
+}

@@ -1,5 +1,15 @@
 {{template "head" .IsSignedIn}}
-<p>
-    To do...
-</p>
+<h1>Vote on the Movie</h1>
+<p>We watch the winner at {{.ShowTime}}</p>
+<a href="https://strawpoll.com/XOgOVNbJ0n3">Vote Here</a>
+{{range .Movies}}
+    <div class="movie-row">
+        <img src="https://image.tmdb.org/t/p/w92{{.PosterURL}}" alt={{.Title}}/>
+        <div class="movie-title-box">
+            <h2 class="movie-title">{{.Title}}</h2>
+            <p class="movie-meta">{{.Year}}</p>
+            <p class="movie-meta">Runtime: {{.Runtime}}</p>
+        </div>
+    </div>
+{{end}}
 {{template "foot"}}
