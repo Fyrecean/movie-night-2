@@ -65,8 +65,8 @@ func main() {
 	http.Handle("/scripts/", http.StripPrefix("/scripts/", http.FileServer(http.Dir("scripts"))))
 	http.Handle("/img/", http.StripPrefix("/img/", http.FileServer(http.Dir("img"))))
 
-	err := http.ListenAndServeTLS(":4343", "secrets/carter-server.crt", "secrets/carter-server.key", nil)
-	// err := http.ListenAndServeTLS(":443", "/etc/letsencrypt/live/movies.fyrecean.com/fullchain.pem", "/etc/letsencrypt/live/movies.fyrecean.com/privkey.pem", nil)
+	//err := http.ListenAndServeTLS(":4343", "secrets/carter-server.crt", "secrets/carter-server.key", nil)
+	err := http.ListenAndServeTLS(":443", "/etc/letsencrypt/live/movies.fyrecean.com/fullchain.pem", "/etc/letsencrypt/live/movies.fyrecean.com/privkey.pem", nil)
 	// err := http.ListenAndServe(":8080", nil)
 	panic(err)
 }

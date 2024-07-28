@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  web:
+    image: your_docker_image
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "443:443"
+    volumes:
+      - /etc/letsencrypt/live/movies.fyrecean.com:/etc/letsencrypt/live/movies.fyrecean.com:ro
+    environment:
+      - CGO_ENABLED=1
