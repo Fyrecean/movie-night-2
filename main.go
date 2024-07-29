@@ -10,6 +10,7 @@ import (
 	"html/template"
 	"math/big"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 	"unicode"
@@ -22,6 +23,7 @@ import (
 var db *sql.DB
 
 func initDB() {
+	os.Setenv("UMASK", "022")
 	tmp_db, err := sql.Open("sqlite3", "./movie-night.db")
 	if err != nil {
 		panic(err)
