@@ -61,7 +61,7 @@ func main() {
 	http.HandleFunc("POST /api/sign-in", signinHandler)
 	http.HandleFunc("POST /api/logout", logoutHandler)
 	http.HandleFunc("POST /api/rsvp/{type}", rsvpHandler)
-	http.HandleFunc("POST /api/vote/{up-down}", voteApiHandler)
+	http.HandleFunc("POST /api/vote/{updown}", voteApiHandler)
 	http.HandleFunc("POST /api/otp", otpApiHandler)
 	http.HandleFunc("POST /api/admin/add-movie", adminSuggestionHandler)
 	http.HandleFunc("POST /api/admin/schedule-event/{time}", adminScheduleHandler)
