@@ -2,7 +2,7 @@
 Description=Hay Fever Theater Web Server
 After=network.target
  
- [Serivce]
+ [Service]
  Type=simple
  User=webdeploy
  Group=webdeploy
