@@ -10,7 +10,6 @@ import (
 	"html/template"
 	"math/big"
 	"net/http"
-	"os"
 	"strconv"
 	"time"
 	"unicode"
@@ -24,10 +23,6 @@ var db *sql.DB
 
 func initDB() {
 	tmp_db, err := sql.Open("sqlite3", "./movie-night.db")
-	if err != nil {
-		panic(err)
-	}
-	err = os.Chmod("movie-night.db", 0660)
 	if err != nil {
 		panic(err)
 	}
