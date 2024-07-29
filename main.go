@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"errors"
+	"flag"
 	"fmt"
 	"html/template"
 	"math/big"
@@ -42,6 +43,9 @@ func initDB() {
 }
 
 func main() {
+	prod := flag.Bool("prod", false, "Run in production mode")
+	flag.Parse()
+
 	initDB()
 	defer db.Close()
 	http.HandleFunc("/", homeHandler)
@@ -65,9 +69,12 @@ func main() {
 	http.Handle("/scripts/", http.StripPrefix("/scripts/", http.FileServer(http.Dir("scripts"))))
 	http.Handle("/img/", http.StripPrefix("/img/", http.FileServer(http.Dir("img"))))
 
-	//err := http.ListenAndServeTLS(":4343", "secrets/carter-server.crt", "secrets/carter-server.key", nil)
-	err := http.ListenAndServeTLS(":443", "/etc/letsencrypt/live/movies.fyrecean.com/fullchain.pem", "/etc/letsencrypt/live/movies.fyrecean.com/privkey.pem", nil)
-	// err := http.ListenAndServe(":8080", nil)
+	var err error
+	if *prod {
+		err = http.ListenAndServeTLS(":4343", "/etc/letsencrypt/live/movies.fyrecean.com/fullchain.pem", "/etc/letsencrypt/live/movies.fyrecean.com/privkey.pem", nil)
+	} else {
+		err = http.ListenAndServeTLS(":4443", "secrets/carter-server.crt", "secrets/carter-server.key", nil)
+	}
 	panic(err)
 }
 

@@ -1,0 +1,13 @@
+[Unit]
+Description=Hay Fever Theater Web Server
+After=network.target
+ 
+ [Serivce]
+ Type=simple
+ User=webdeploy
+ Group=webdeploy
+ WorkingDirectory=/opt/hay-fever-theater
+ ExecStart=/opt/hay-fever-theater/hay-fever-theater --prod
+
+ [Install]
+ WantedBy=multi-user.target

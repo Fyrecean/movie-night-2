@@ -1,7 +1,6 @@
 {{template "head" .IsSignedIn}}
 <h1>Vote on the Movie</h1>
 <p>We watch the winner at {{.ShowTime}}</p>
-<a href="https://strawpoll.com/XOgOVNbJ0n3">Vote Here</a>
 {{range .Movies}}
     <div class="movie-row">
         <img src="https://image.tmdb.org/t/p/w92{{.PosterURL}}" alt={{.Title}}/>
