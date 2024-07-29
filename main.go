@@ -23,7 +23,7 @@ import (
 var db *sql.DB
 
 func initDB() {
-	os.Setenv("UMASK", "022")
+	os.Setenv("UMASK", "0660")
 	tmp_db, err := sql.Open("sqlite3", "./movie-night.db")
 	if err != nil {
 		panic(err)
@@ -61,6 +61,7 @@ func main() {
 	http.HandleFunc("POST /api/sign-in", signinHandler)
 	http.HandleFunc("POST /api/logout", logoutHandler)
 	http.HandleFunc("POST /api/rsvp/{type}", rsvpHandler)
+	http.HandleFunc("POST /api/vote/{up-down}", voteApiHandler)
 	http.HandleFunc("POST /api/otp", otpApiHandler)
 	http.HandleFunc("POST /api/admin/add-movie", adminSuggestionHandler)
 	http.HandleFunc("POST /api/admin/schedule-event/{time}", adminScheduleHandler)
@@ -491,6 +492,10 @@ func voteHandler(w http.ResponseWriter, r *http.Request) {
 		Movies:     movies,
 	}
 	t.ExecuteTemplate(w, "vote.tmpl", p)
+}
+
+func voteApiHandler(w http.ResponseWriter, r *http.Request) {
+
 }
 
 type tmpl_Admin struct {
