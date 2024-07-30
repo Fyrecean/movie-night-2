@@ -1,10 +1,10 @@
 {{template "head" .IsSignedIn}}
-<p>
+<div id="attendees">
     <h1>Attendees</h1>
     <ul>
         {{range $name := .Attendees}}
         <li>{{$name}}</li>
         {{end}}
     </ul>
-</p>
+</div>
 {{template "foot"}}

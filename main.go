@@ -10,6 +10,7 @@ import (
 	"html/template"
 	"math/big"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 	"unicode"
@@ -31,9 +32,10 @@ func initDB() {
 		"CREATE TABLE IF NOT EXISTS sessions (session_id TEXT PRIMARY KEY, user_id integer, authenticated bool, otp integer, otp_expiration TEXT, FOREIGN KEY (user_id) REFERENCES users(user_id) );" +
 		"CREATE TABLE IF NOT EXISTS events (event_id INTEGER PRIMARY KEY ASC, event_time TEXT);" +
 		//"INSERT OR IGNORE INTO events (event_id, event_time) VALUES (1, '" + time.Now().AddDate(0, 0, 1).Format(time.RFC3339) + "');" +
-		"CREATE TABLE IF NOT EXISTS reservations (event_id INTEGER, user_id INTEGER, PRIMARY KEY (event_id, user_id) FOREIGN KEY (event_id) REFERENCES events(event_id), FOREIGN KEY (user_id) REFERENCES users(user_id));" +
+		"CREATE TABLE IF NOT EXISTS reservations (event_id INTEGER, user_id INTEGER, PRIMARY KEY (event_id, user_id), FOREIGN KEY (event_id) REFERENCES events(event_id), FOREIGN KEY (user_id) REFERENCES users(user_id));" +
 		"CREATE TABLE IF NOT EXISTS suggestions (suggestion_id INTEGER PRIMARY KEY ASC, event_id INTEGER, user_id INTEGER, movie_title TEXT, movie_year TEXT, runtime INTEGER, poster_url TEXT, FOREIGN KEY (event_id) REFERENCES events(event_id), FOREIGN KEY (user_id) REFERENCES users(user_id));" +
-		"CREATE TABLE IF NOT EXISTS votes (user_id INTEGER, suggestion_id INTEGER, vote INTEGER, PRIMARY KEY (user_id, suggestion_id) FOREIGN KEY (user_id) REFERENCES users(user_id) FOREIGN KEY (suggestion_id) REFERENCES suggestions(suggestion_id));"
+		// "DROP TABLE votes;" +
+		"CREATE TABLE IF NOT EXISTS votes (user_id INTEGER, suggestion_id INTEGER, event_id INTEGER DEFAULT 0, vote INTEGER, PRIMARY KEY (user_id, suggestion_id) FOREIGN KEY (user_id) REFERENCES users(user_id), FOREIGN KEY (suggestion_id) REFERENCES suggestions(suggestion_id), FOREIGN KEY (event_id) REFERENCES events(event_id));"
 
 	_, err = tmp_db.Exec(sql_make_tables)
 	if err != nil {
@@ -59,7 +61,7 @@ func main() {
 	http.HandleFunc("POST /api/sign-in", signinHandler)
 	http.HandleFunc("POST /api/logout", logoutHandler)
 	http.HandleFunc("POST /api/rsvp/{type}", rsvpHandler)
-	http.HandleFunc("POST /api/vote/{updown}", voteApiHandler)
+	http.HandleFunc("POST /api/vote/{suggestion}/{updown}", voteApiHandler)
 	http.HandleFunc("POST /api/otp", otpApiHandler)
 	http.HandleFunc("POST /api/admin/add-movie", adminSuggestionHandler)
 	http.HandleFunc("POST /api/admin/schedule-event/{time}", adminScheduleHandler)
@@ -71,6 +73,7 @@ func main() {
 	http.Handle("/img/", http.StripPrefix("/img/", http.FileServer(http.Dir("img"))))
 
 	var err error
+
 	if *prod {
 		err = http.ListenAndServeTLS(":4343", "/etc/letsencrypt/live/movies.fyrecean.com/fullchain.pem", "/etc/letsencrypt/live/movies.fyrecean.com/privkey.pem", nil)
 	} else {
@@ -183,8 +186,10 @@ func getNextEvent() (event_id int, event_time time.Time, err error) {
 }
 
 func userIsRSVPed(event_id int, user_id int) bool {
-	q := db.QueryRow("SELECT user_id FROM reservations WHERE user_id=? AND event_id=?", event_id, user_id)
-	return q.Scan() != sql.ErrNoRows
+	q := db.QueryRow("SELECT user_id FROM reservations WHERE user_id=? AND event_id=?", user_id, event_id)
+	var x int
+	err := q.Scan(&x)
+	return err != sql.ErrNoRows
 }
 
 func phoneNumberValidator(phone string) (string, error) {
@@ -259,7 +264,6 @@ func otpPageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	otp_expiration, err := time.Parse(time.RFC3339, otp_expiration_str)
 	if authenticated || err != nil {
-		fmt.Println(authenticated, err, otp_expiration)
 		http.Error(w, "No code available", http.StatusBadRequest)
 		return
 	}
@@ -313,7 +317,6 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 	db.Exec(stmt, cookie.Value)
 
 	cookie.Expires = time.Unix(0, 0)
-	fmt.Println(cookie)
 	http.SetCookie(w, cookie)
 }
 
@@ -331,26 +334,39 @@ func rsvpHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if attending == "yes" {
-		db.Exec("INSERT OR IGNORE INTO reservations (event_id, user_id) VALUES (?, ?)", event_id, user_id)
+		_, err = db.Exec("INSERT OR IGNORE INTO reservations (event_id, user_id) VALUES (?, ?)", event_id, user_id)
+		if err != nil {
+			fmt.Println("Add to reservations", err)
+			http.Error(w, "Failed to add user", http.StatusInternalServerError)
+		}
 	} else if attending == "no" {
-		db.Exec("DELETE FROM reservations WHERE event_id=? AND user_id=?", event_id, user_id)
+		_, err = db.Exec("DELETE FROM reservations WHERE event_id=? AND user_id=?", event_id, user_id)
+		if err != nil {
+			fmt.Println("Delete from reservations", err)
+		}
+		_, err = db.Exec("DELETE FROM votes WHERE user_id=? AND suggestion_id IN ("+
+			"SELECT suggestion_id FROM suggestions  WHERE suggestions.event_id=?);", user_id, event_id)
+		if err != nil {
+			fmt.Println("Delete from votes", err)
+		}
 	}
 }
 
 type tmpl_Home struct {
-	IsSignedIn bool
-	IsRSVPed   bool
-	DoorTime   string
-	StartTime  string
-	EventDate  string
-	Name       string
+	IsSignedIn     bool
+	IsRSVPed       bool
+	DoorTime       string
+	StartTime      string
+	EventDate      string
+	Name           string
+	UpcomingEvents []string
 }
 
 func homeHandler(w http.ResponseWriter, r *http.Request) {
 	//err := templates.ExecuteTemplate(w, "home.html", Page{Body: "Hello World!"})
 
-	event_id, event_time, err := getNextEvent()
-	if err != nil {
+	q, err := db.Query("SELECT event_id, event_time FROM events WHERE event_time > ? ORDER BY event_time ASC;", time.Now().Format(time.RFC3339))
+	if err != nil || !q.Next() {
 		// http.Error(w, err.Error(), http.StatusInternalServerError)
 		// fmt.Println("rsvp handler - Failed to retrieve next event:", err)
 		t, err := template.ParseFiles("templates/boilerplate.tmpl", "templates/nothing.tmpl")
@@ -361,6 +377,22 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var event_id int
+	var event_time_str string
+	q.Scan(&event_id, &event_time_str)
+	event_time, err := time.Parse(time.RFC3339, event_time_str)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+	var upcomingEvents []string
+	for q.Next() {
+		var x int
+		q.Scan(&x, &event_time_str)
+		t, _ := time.Parse(time.RFC3339, event_time_str)
+
+		upcomingEvents = append(upcomingEvents, parseTimeToEventDate(t)+" at "+t.Format("3:04PM"))
+	}
+
 	t, err := template.ParseFiles("templates/boilerplate.tmpl", "templates/home.tmpl")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -368,12 +400,13 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 	isSignedIn, user_id, first_name := getUserFromSession(r)
 
 	p := tmpl_Home{
-		IsSignedIn: isSignedIn,
-		IsRSVPed:   userIsRSVPed(user_id, event_id),
-		Name:       first_name,
-		EventDate:  parseTimeToEventDate(event_time),
-		StartTime:  event_time.Format("3:04PM"),
-		DoorTime:   event_time.Add(-time.Minute * 30).Format("3:04PM"),
+		IsSignedIn:     isSignedIn,
+		IsRSVPed:       userIsRSVPed(event_id, user_id),
+		Name:           first_name,
+		EventDate:      parseTimeToEventDate(event_time),
+		StartTime:      event_time.Format("3:04PM"),
+		DoorTime:       event_time.Add(-time.Minute * 30).Format("3:04PM"),
+		UpcomingEvents: upcomingEvents,
 	}
 	t.ExecuteTemplate(w, "home.tmpl", p)
 }
@@ -433,15 +466,20 @@ func attendeesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type Movie struct {
-	PosterURL string
-	Title     string
-	Year      string
-	Runtime   string
-	votes     int
+	SuggestionId string
+	PosterURL    string
+	Title        string
+	Year         string
+	Runtime      string
+	UpVotes      int
+	DownVotes    int
+	MyVote       int
+	Score        int
 }
 
 type tmpl_Vote struct {
 	IsSignedIn bool
+	IsRSVPed   bool
 	ShowTime   string
 	Movies     []Movie
 }
@@ -450,25 +488,41 @@ func voteHandler(w http.ResponseWriter, r *http.Request) {
 	//err := templates.ExecuteTemplate(w, "home.html", Page{Body: "Hello World!"})
 	t, err := template.ParseFiles("templates/boilerplate.tmpl", "templates/vote.tmpl")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+		http.Error(w, "", http.StatusInternalServerError)
+		fmt.Println("voteHandler template parsing", err)
 		return
 	}
 
 	event_id, event_time, _ := getNextEvent()
+	found, user_id, _ := getUserFromSession(r)
+	if !found {
+		http.Error(w, "", http.StatusUnauthorized)
+		return
+	}
 
-	stmt := "SELECT s.poster_url, s.movie_title, s.movie_year, s.runtime, IFNULL(v.total_votes, 0) AS total_votes " +
-		"FROM suggestions s " +
-		"LEFT JOIN ( " +
-		"	SELECT suggestion_id, SUM(vote) AS total_votes " +
+	stmt := "WITH v AS ( " +
+		"	SELECT " +
+		"		suggestion_id, " +
+		"		SUM(CASE WHEN vote > 0 THEN VOTE ELSE 0 END) AS up_votes, " +
+		"		ABS(SUM(CASE WHEN vote < 0 THEN VOTE ELSE 0 END)) AS down_votes " +
 		"	FROM votes " +
-		"	GROUP BY suggestion_id " +
-		") v ON s.suggestion_id = v.suggestion_id " +
-		"WHERE s.event_id = ?;"
-
-	//rows, err := db.Query("SELECT poster_url, movie_title, movie_year, runtime FROM suggestions WHERE event_id=?;", event_id)
-	rows, err := db.Query(stmt, event_id)
+		"   WHERE event_id=? " +
+		"   GROUP BY suggestion_id " +
+		"), u AS ( " +
+		"	SELECT  " +
+		"		suggestion_id, " +
+		"		vote " +
+		"	FROM votes WHERE event_id=? AND user_id=? " +
+		") " +
+		"SELECT s.suggestion_id, s.poster_url, s.movie_title, s.movie_year, s.runtime, IFNULL(v.up_votes, 0), IFNULL(v.down_votes, 0), IFNULL(u.vote, 0) " +
+		"FROM suggestions s " +
+		"LEFT JOIN  " +
+		"	v ON v.suggestion_id=s.suggestion_id " +
+		"LEFT JOIN " +
+		"	u ON u.suggestion_id=v.suggestion_id"
+	rows, err := db.Query(stmt, event_id, event_id, user_id)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Loading suggestions failed", err)
 		return
 	}
 
@@ -477,23 +531,69 @@ func voteHandler(w http.ResponseWriter, r *http.Request) {
 	var movies []Movie
 	for rows.Next() {
 		var movie Movie
-		if err := rows.Scan(&movie.PosterURL, &movie.Title, &movie.Year, &movie.Runtime, &movie.votes); err != nil {
+		if err := rows.Scan(&movie.SuggestionId, &movie.PosterURL, &movie.Title, &movie.Year, &movie.Runtime, &movie.UpVotes, &movie.DownVotes, &movie.MyVote); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		movie.Score = movie.UpVotes - movie.DownVotes
 		movies = append(movies, movie)
 	}
 
+	sort.Slice(movies, func(i, j int) bool {
+		return movies[i].Score > movies[j].Score
+	})
+
 	p := tmpl_Vote{
 		IsSignedIn: true,
+		IsRSVPed:   userIsRSVPed(event_id, user_id),
 		ShowTime:   event_time.Format("3:04PM"),
 		Movies:     movies,
 	}
+
 	t.ExecuteTemplate(w, "vote.tmpl", p)
 }
 
 func voteApiHandler(w http.ResponseWriter, r *http.Request) {
+	suggestion_id := r.PathValue("suggestion")
+	cookie, err := r.Cookie("Session")
+	if err != nil {
+		http.Error(w, "", http.StatusUnauthorized)
+	}
+	session_id := cookie.Value
+	var vote int
+	switch r.PathValue("updown") {
+	case "up":
+		vote = 1
+	case "down":
+		vote = -1
+	default:
+		http.Error(w, "Vote must be up or down", http.StatusBadRequest)
+		return
+	}
 
+	stmt :=
+		"INSERT OR REPLACE INTO votes (suggestion_id, user_id, vote, event_id) SELECT suggestion_id, user_id, ?, event_id FROM ( " +
+			"WITH event AS ( " +
+			"	SELECT event_id " +
+			"	FROM events " +
+			"	WHERE event_time > ? " +
+			"	ORDER BY event_time ASC " +
+			"	LIMIT 1 " +
+			") SELECT suggestions.suggestion_id, sessions.user_id, event.event_id FROM suggestions " +
+			"INNER JOIN " +
+			"	event ON suggestions.event_id=event.event_id " +
+			"INNER JOIN " +
+			"	reservations ON reservations.event_id=event.event_id " +
+			"INNER JOIN " +
+			"	sessions ON sessions.user_id=reservations.user_id " +
+			"WHERE suggestion_id=? AND session_id=? AND authenticated=1 " +
+			");"
+
+	_, err = db.Exec(stmt, vote, time.Now().Format(time.RFC3339), suggestion_id, session_id)
+	if err != nil {
+		http.Error(w, "", http.StatusUnauthorized)
+		fmt.Println(err.Error())
+	}
 }
 
 type tmpl_Admin struct {
@@ -556,7 +656,6 @@ func adminSuggestionHandler(w http.ResponseWriter, r *http.Request) {
 
 	event_id, _, _ := getNextEvent()
 
-	//movie_id := r.PathValue("id")
 	title := r.FormValue("title")
 	year := r.FormValue("year")
 	runtime, _ := strconv.Atoi(r.FormValue("runtime"))

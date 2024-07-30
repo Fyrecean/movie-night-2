@@ -1,15 +1,17 @@
 {{define "head"}}
+<html lang="en">
 <head>
     <title>Hay Fever Theater</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="styles/styles.css">
 </head>
-
+<body>
 <div class="main">
     <a href="/"><h1 id="title">Hay Fever Theater</h1></a>
     {{if .}}
     <div id="nav-bar">
         <nav>
+            <a href="/">Home</a>
             <a href="/vote">Pick the Movie</a>
             <a href="/attendees">See Who's Coming</a>
             <a href="/directions">How to Get Here</a>
@@ -20,7 +22,9 @@
 {{end}}
 
 {{define "foot"}}
-    <div>
+    </div>
 </div>
+</body>
 <script src="/scripts/boilerplate.js"></script>
+</html>
 {{end}}

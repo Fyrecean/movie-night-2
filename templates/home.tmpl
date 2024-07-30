@@ -1,6 +1,15 @@
 {{template "head" .IsSignedIn}}
 
-<p>The show starts {{.EventDate}} at {{.StartTime}}. Doors will open at {{.DoorTime}}.</p>
+{{if .IsSignedIn}}
+<div id="welcome">
+    Welcome, {{.Name}}!
+    <form id="logout-form" action="/api/logout" method="POST">
+        <button id="logout-button" type="submit">Not you? Sign out</button>
+    </form>
+</div>
+{{end}}
+
+<p>The next show starts {{.EventDate}} at {{.StartTime}}. Doors open at {{.DoorTime}}.</p>
 
 {{if not .IsSignedIn}}
     <p>
@@ -37,12 +46,6 @@
         </form>
     </div>
 {{else}}
-    <div id="welcome">
-        Welcome, {{.Name}}!
-        <form id="logout-form" action="/api/logout" method="POST">
-            <button id="logout-button" type="submit">Not you? Sign out</button>
-        </form>
-    </div>
     {{if .IsRSVPed}}
         <form id="rsvp-form" action="/api/rsvp/no" method="POST">
             <h3 class="section-header">Can't make it anymore?</h3>
@@ -59,6 +62,15 @@
         </form>
     {{end}}
 {{end}}
+<script src="/scripts/home.js"></script>    
+
+{{if .UpcomingEvents}}
+<h3 class="section-header">Upcoming Events</h3>
+<ul>
+    {{range .UpcomingEvents}}
+        <li>{{.}}</li>
+    {{end}}
+</ul>
+{{end}}
 
 {{template "foot"}}
-<script src="scripts/home.js"></script>

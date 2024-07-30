@@ -17,7 +17,7 @@ nav {
     width: 100%;
     display: flex;
     justify-content: space-around;
-    align-items: center;
+    align-items: stretch;
     font-size: large;
 }
 
@@ -34,8 +34,9 @@ nav {
 }
 
 nav a {
+    display: flex;
+    align-items : center;
     text-align: center;
-    line-height: 100%;
     border: 2px solid firebrick;
     background-color: hsl(34, 57%, 70%);
     box-shadow: 1px 1px 1px 1px;
@@ -143,11 +144,11 @@ form button:active {
 /* Style for horizontal screens */
 @media (orientation: landscape) {
     .main {
-        width: 75%;
+        width: 60%;
         margin: 0 auto; /* Center the div horizontally */
     }
     #title {
-        font-size: 8vw;
+        font-size: 7.5vw;
     }
     
     nav {
@@ -194,21 +195,80 @@ form button:active {
     height: 60%;
 }
 
+.movie-row:not(:first-child) {
+    border-top:hsl(34, 57%, 15%) solid 1px;
+}
+
 .movie-row {
-    margin-bottom: 5px;
-    display: flex;
-    flex-direction: row;
+    padding: 5px 5px;
+    display: grid;
+    grid-template-columns: 60px auto 4rem;
+    background-color: hsl(34, 57%, 70%);
+    color: hsl(34, 57%, 20%)
+}
+
+.movie-poster {
+    width: 100%;
+    border: firebrick solid 2px;
 }
 
 .movie-title-box {
     margin-left: 5px;
 }
 
+/* .movie-title-line {
+
+} */
+
 .movie-title {
-    margin-bottom: .5rem;
+    margin-bottom: .25rem;
+    font-size: x-large;
+    margin-top: 0px;
+}
+
+.movie-year {
+    line-height: 75%;
+    vertical-align: text-top;
+    margin-left: .25rem;
 }
 
 .movie-meta {
     margin-top: .25rem;
     margin-bottom: .25rem;
+}
+
+.movie-votes {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+}
+
+button.vote {
+    width: 3rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 5px;
+}
+
+#movie-suggestions {
+    max-width: 25rem;
+    margin: auto;
+}
+
+#attendees {
+    margin: auto
+}
+
+.score {
+    margin-top: .1rem;
+    margin-bottom: -.1rem;
+}
+
+.active-up {
+    color: green;
+}
+.active-down {
+    color: firebrick;
 }
