@@ -619,17 +619,7 @@ func adminHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := db.Query("SELECT event_id, event_time FROM events WHERE event_time > ? ORDER BY event_time ASC;", time.Now().Format(time.RFC3339))
-	if err != nil || !rows.Next() {
-		// http.Error(w, err.Error(), http.StatusInternalServerError)
-		// fmt.Println("rsvp handler - Failed to retrieve next event:", err)
-		t, err := template.ParseFiles("templates/boilerplate.tmpl", "templates/nothing.tmpl")
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
-		t.ExecuteTemplate(w, "nothing.tmpl", nil)
-		return
-	}
+	rows, _ := db.Query("SELECT event_id, event_time FROM events WHERE event_time > ? ORDER BY event_time ASC;", time.Now().Format(time.RFC3339))
 	defer rows.Close()
 
 	var upcomingEvents []Event
