@@ -1,6 +1,6 @@
 {{template "head" .IsSignedIn}}
 <div id="attendees">
-    <h1>Attendees</h1>
+    <h3 class="section-header">Attendees</h1>
     <ul>
         {{range $name := .Attendees}}
         <li>{{$name}}</li>
