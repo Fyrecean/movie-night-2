@@ -65,6 +65,7 @@ func main() {
 	http.HandleFunc("POST /api/otp", otpApiHandler)
 	http.HandleFunc("POST /api/admin/add-movie", adminSuggestionHandler)
 	http.HandleFunc("POST /api/admin/schedule-event/{time}", adminScheduleHandler)
+	http.HandleFunc("POST /api/admin/cancel-event/{id}", adminCancelEventHandler)
 
 	http.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, "favicon.ico") })
 
@@ -376,6 +377,7 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		t.ExecuteTemplate(w, "nothing.tmpl", nil)
 		return
 	}
+	defer q.Close()
 
 	var event_id int
 	var event_time_str string
@@ -596,8 +598,14 @@ func voteApiHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type Event struct {
+	Title string
+	Id    int
+}
+
 type tmpl_Admin struct {
-	MovieAPIKey string
+	MovieAPIKey    string
+	UpcomingEvents []Event
 }
 
 func adminHandler(w http.ResponseWriter, r *http.Request) {
@@ -611,6 +619,32 @@ func adminHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	rows, err := db.Query("SELECT event_id, event_time FROM events WHERE event_time > ? ORDER BY event_time ASC;", time.Now().Format(time.RFC3339))
+	if err != nil || !rows.Next() {
+		// http.Error(w, err.Error(), http.StatusInternalServerError)
+		// fmt.Println("rsvp handler - Failed to retrieve next event:", err)
+		t, err := template.ParseFiles("templates/boilerplate.tmpl", "templates/nothing.tmpl")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		t.ExecuteTemplate(w, "nothing.tmpl", nil)
+		return
+	}
+	defer rows.Close()
+
+	var upcomingEvents []Event
+	for rows.Next() {
+		var event_id int
+		var event_time_str string
+		rows.Scan(&event_id, &event_time_str)
+		t, _ := time.Parse(time.RFC3339, event_time_str)
+
+		upcomingEvents = append(upcomingEvents, Event{
+			Title: parseTimeToEventDate(t) + " at " + t.Format("3:04PM"),
+			Id:    event_id,
+		})
+	}
+
 	t, err := template.ParseFiles("templates/boilerplate.tmpl", "templates/admin.tmpl")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -618,9 +652,30 @@ func adminHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p := tmpl_Admin{
-		MovieAPIKey: "5214fb5def4b1a9c2282c6aad7b83ebb",
+		MovieAPIKey:    "5214fb5def4b1a9c2282c6aad7b83ebb",
+		UpcomingEvents: upcomingEvents,
 	}
 	t.ExecuteTemplate(w, "admin.tmpl", p)
+}
+
+func adminCancelEventHandler(w http.ResponseWriter, r *http.Request) {
+	_, user_id, _ := getUserFromSession(r)
+	stmt := "SELECT is_admin FROM users WHERE user_id = ?;"
+	q := db.QueryRow(stmt, user_id)
+	var is_admin bool
+	if err := q.Scan(&is_admin); err != nil || !is_admin {
+		http.Error(w, "Not authorized!", http.StatusBadRequest)
+		return
+	}
+	event_id := r.PathValue("id")
+	stmt = "DELETE FROM reservations WHERE event_id=?;" +
+		"DELETE FROM votes WHERE event_id=?;" +
+		"DELETE FROM suggestions WHERE event_id=?;" +
+		"DELETE FROM events WHERE event_id=?;"
+	_, err := db.Exec(stmt, event_id, event_id, event_id, event_id)
+	if err != nil {
+		fmt.Println("Error Deleting event:", err)
+	}
 }
 
 func adminScheduleHandler(w http.ResponseWriter, r *http.Request) {

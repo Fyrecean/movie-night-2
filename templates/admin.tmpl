@@ -29,6 +29,13 @@
 
     <button type="submit">Schedule Event</button>
 </form>
+
+<h3>Events</h3>
+{{range .UpcomingEvents}}
+<div>
+    <span>{{.Title}}</span><button onClick="fetch('/api/admin/cancel-event/{{.Id}}', {method: 'POST'})">X</button>
+</div>
+{{end}}
 {{template "foot"}}
 
 <script src="/scripts/admin.js"></script>
