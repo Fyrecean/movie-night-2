@@ -78,7 +78,7 @@ form div {
     justify-items: start;
 }
 
-form button {
+button {
     text-align: center;
     line-height: 100%;
     border: 2px solid firebrick;
@@ -106,11 +106,11 @@ form button {
     justify-content: space-between;
 }
 
-form button:hover {
+button:hover {
     box-shadow: .5px .5px 1px 1px;
 }
 
-form button:active {
+button:active {
     background-color: hsl(34, 57%, 63%);
 }
 
@@ -202,7 +202,7 @@ form button:active {
 .movie-row {
     padding: 5px 5px;
     display: grid;
-    grid-template-columns: 60px auto 4rem;
+    grid-template-columns: 60px auto max-content;
     background-color: hsl(34, 57%, 70%);
     color: hsl(34, 57%, 20%)
 }
@@ -245,14 +245,16 @@ form button:active {
 }
 
 button.vote {
-    width: 3rem;
+    border-width: 1px;
+    width: 2.2rem;
     display: flex;
     align-items: center;
     justify-content: space-between;
     margin-top: 5px;
+    padding: .1rem;
 }
 
-#movie-suggestions {
+#movie-suggestions, #my-suggestion {
     max-width: 25rem;
     margin: auto;
 }
@@ -268,7 +270,12 @@ button.vote {
 
 .active-up {
     color: green;
+    border-color: darkgreen;
 }
 .active-down {
     color: firebrick;
+}
+
+button#replace-suggestion {
+    height: fit-content
 }

@@ -4,12 +4,15 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"html/template"
+	"log"
 	"math/big"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"time"
@@ -33,9 +36,11 @@ func initDB() {
 		"CREATE TABLE IF NOT EXISTS events (event_id INTEGER PRIMARY KEY ASC, event_time TEXT);" +
 		//"INSERT OR IGNORE INTO events (event_id, event_time) VALUES (1, '" + time.Now().AddDate(0, 0, 1).Format(time.RFC3339) + "');" +
 		"CREATE TABLE IF NOT EXISTS reservations (event_id INTEGER, user_id INTEGER, PRIMARY KEY (event_id, user_id), FOREIGN KEY (event_id) REFERENCES events(event_id), FOREIGN KEY (user_id) REFERENCES users(user_id));" +
-		"CREATE TABLE IF NOT EXISTS suggestions (suggestion_id INTEGER PRIMARY KEY ASC, event_id INTEGER, user_id INTEGER, movie_title TEXT, movie_year TEXT, runtime INTEGER, poster_url TEXT, FOREIGN KEY (event_id) REFERENCES events(event_id), FOREIGN KEY (user_id) REFERENCES users(user_id));" +
+		// "DROP TABLE suggestions; " +
+		"CREATE TABLE IF NOT EXISTS suggestions (suggestion_id INTEGER PRIMARY KEY ASC, event_id INTEGER, user_id INTEGER, movie_db_id TEXT, movie_title TEXT, movie_year TEXT, runtime INTEGER, poster_url TEXT, UNIQUE(user_id, event_id), FOREIGN KEY (event_id) REFERENCES events(event_id), FOREIGN KEY (user_id) REFERENCES users(user_id));" +
 		// "DROP TABLE votes;" +
-		"CREATE TABLE IF NOT EXISTS votes (user_id INTEGER, suggestion_id INTEGER, event_id INTEGER DEFAULT 0, vote INTEGER, PRIMARY KEY (user_id, suggestion_id) FOREIGN KEY (user_id) REFERENCES users(user_id), FOREIGN KEY (suggestion_id) REFERENCES suggestions(suggestion_id), FOREIGN KEY (event_id) REFERENCES events(event_id));"
+		"CREATE TABLE IF NOT EXISTS votes (user_id INTEGER, suggestion_id INTEGER, event_id INTEGER DEFAULT 0, vote INTEGER, PRIMARY KEY (user_id, suggestion_id) FOREIGN KEY (user_id) REFERENCES users(user_id), FOREIGN KEY (suggestion_id) REFERENCES suggestions(suggestion_id), FOREIGN KEY (event_id) REFERENCES events(event_id)); " +
+		"CREATE TRIGGER IF NOT EXISTS  delete_votes_after_suggestion_deletion AFTER DELETE ON suggestions FOR EACH ROW BEGIN DELETE FROM votes WHERE suggestion_id = OLD.suggestion_id; END;"
 
 	_, err = tmp_db.Exec(sql_make_tables)
 	if err != nil {
@@ -61,6 +66,9 @@ func main() {
 	http.HandleFunc("POST /api/sign-in", signinHandler)
 	http.HandleFunc("POST /api/logout", logoutHandler)
 	http.HandleFunc("POST /api/rsvp/{type}", rsvpHandler)
+	http.HandleFunc("/api/search/{query}", handleSearch)
+	http.HandleFunc("POST /api/suggest", suggestionHandler)
+	http.HandleFunc("POST /api/clearSuggestion", clearSuggestionHandler)
 	http.HandleFunc("POST /api/vote/{suggestion}/{updown}", voteApiHandler)
 	http.HandleFunc("POST /api/otp", otpApiHandler)
 	http.HandleFunc("POST /api/admin/add-movie", adminSuggestionHandler)
@@ -468,15 +476,16 @@ func attendeesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type Movie struct {
-	SuggestionId string
-	PosterURL    string
-	Title        string
-	Year         string
-	Runtime      string
-	UpVotes      int
-	DownVotes    int
-	MyVote       int
-	Score        int
+	SuggestionId   string
+	SuggestingUser int
+	PosterURL      string
+	Title          string
+	Year           string
+	Runtime        string
+	UpVotes        int
+	DownVotes      int
+	MyVote         int
+	Score          int
 }
 
 type tmpl_Vote struct {
@@ -484,6 +493,7 @@ type tmpl_Vote struct {
 	IsRSVPed   bool
 	ShowTime   string
 	Movies     []Movie
+	Suggestion Movie
 }
 
 func voteHandler(w http.ResponseWriter, r *http.Request) {
@@ -496,6 +506,7 @@ func voteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	event_id, event_time, _ := getNextEvent()
+	fmt.Println(event_id)
 	found, user_id, _ := getUserFromSession(r)
 	if !found {
 		http.Error(w, "", http.StatusUnauthorized)
@@ -516,7 +527,7 @@ func voteHandler(w http.ResponseWriter, r *http.Request) {
 		"		vote " +
 		"	FROM votes WHERE event_id=? AND user_id=? " +
 		") " +
-		"SELECT s.suggestion_id, s.poster_url, s.movie_title, s.movie_year, s.runtime, IFNULL(v.up_votes, 0), IFNULL(v.down_votes, 0), IFNULL(u.vote, 0) " +
+		"SELECT s.user_id, s.suggestion_id, s.poster_url, s.movie_title, s.movie_year, s.runtime, IFNULL(v.up_votes, 0), IFNULL(v.down_votes, 0), IFNULL(u.vote, 0) " +
 		"FROM suggestions s " +
 		"LEFT JOIN  " +
 		"	v ON v.suggestion_id=s.suggestion_id " +
@@ -533,7 +544,7 @@ func voteHandler(w http.ResponseWriter, r *http.Request) {
 	var movies []Movie
 	for rows.Next() {
 		var movie Movie
-		if err := rows.Scan(&movie.SuggestionId, &movie.PosterURL, &movie.Title, &movie.Year, &movie.Runtime, &movie.UpVotes, &movie.DownVotes, &movie.MyVote); err != nil {
+		if err := rows.Scan(&movie.SuggestingUser, &movie.SuggestionId, &movie.PosterURL, &movie.Title, &movie.Year, &movie.Runtime, &movie.UpVotes, &movie.DownVotes, &movie.MyVote); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -550,6 +561,12 @@ func voteHandler(w http.ResponseWriter, r *http.Request) {
 		IsRSVPed:   userIsRSVPed(event_id, user_id),
 		ShowTime:   event_time.Format("3:04PM"),
 		Movies:     movies,
+	}
+	for i := 0; i < len(movies); i++ {
+		if movies[i].SuggestingUser == user_id {
+			p.Suggestion = movies[i]
+			break
+		}
 	}
 
 	t.ExecuteTemplate(w, "vote.tmpl", p)
@@ -594,6 +611,112 @@ func voteApiHandler(w http.ResponseWriter, r *http.Request) {
 	_, err = db.Exec(stmt, vote, time.Now().Format(time.RFC3339), suggestion_id, session_id)
 	if err != nil {
 		http.Error(w, "", http.StatusUnauthorized)
+		fmt.Println(err.Error())
+	}
+}
+
+type MovieDB struct {
+	VoteCount int    `json:"vote_count"`
+	Title     string `json:"title"`
+	// Add other fields as needed
+}
+
+type MovieDBResponse struct {
+	Results []MovieDB `json:"results"`
+}
+
+func handleSearch(w http.ResponseWriter, r *http.Request) {
+	query := r.PathValue("query")
+
+	tmdbApiKey := "5214fb5def4b1a9c2282c6aad7b83ebb" // Replace with your actual API key
+
+	// Construct the URL with query parameters
+	baseURL := "https://api.themoviedb.org/3/search/movie"
+	params := url.Values{}
+	params.Add("api_key", tmdbApiKey)
+	params.Add("query", url.QueryEscape(query))
+	params.Add("include_adult", "false")
+	fullURL := fmt.Sprintf("%s?%s", baseURL, params.Encode())
+
+	// Make the HTTP request
+	resp, err := http.Get(fullURL)
+	if err != nil {
+		log.Fatalf("Failed to make request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Check the status code
+	if resp.StatusCode != http.StatusOK {
+		log.Fatalf("Request failed with status code: %d", resp.StatusCode)
+	}
+
+	// Parse the JSON response
+	var data MovieDBResponse
+	err = json.NewDecoder(resp.Body).Decode(&data)
+	if err != nil {
+		log.Fatalf("Failed to decode response: %v", err)
+	}
+
+	// Filter the results based on vote_count
+	var filteredResults []MovieDB
+	for _, movie := range data.Results {
+		if movie.VoteCount > 100 {
+			filteredResults = append(filteredResults, movie)
+		}
+	}
+
+	// Output the results as JSON
+	if len(filteredResults) > 0 {
+		response, err := json.Marshal(filteredResults)
+		if err != nil {
+			log.Fatalf("Failed to marshal filtered results: %v", err)
+		}
+		fmt.Fprintf(w, "%s", response)
+	} else {
+		response, err := json.Marshal(map[string]string{"message": "Movies not found"})
+		if err != nil {
+			log.Fatalf("Failed to marshal not found message: %v", err)
+		}
+		fmt.Printf("%s\n", response)
+	}
+}
+
+func suggestionHandler(w http.ResponseWriter, r *http.Request) {
+	found, user_id, _ := getUserFromSession(r)
+	if !found {
+		http.Error(w, "Not logged in", http.StatusUnauthorized)
+		return
+	}
+	event_id, _, _ := getNextEvent()
+	if !userIsRSVPed(event_id, user_id) {
+		http.Error(w, "Not RSVPed", http.StatusUnauthorized)
+		return
+	}
+
+	movie_id := r.FormValue("id")
+	title := r.FormValue("title")
+	year := r.FormValue("year")
+	runtime, _ := strconv.Atoi(r.FormValue("runtime"))
+	path := r.FormValue("path")
+	_, err := db.Exec("INSERT INTO suggestions (user_id, event_id, movie_db_id, movie_title, movie_year, runtime, poster_url) VALUES (?,?,?,?,?,?,?);",
+		1, event_id, movie_id, title, year, runtime, path)
+	if err != nil {
+		fmt.Println("Failed to save suggestion", movie_id, title, year, runtime, path)
+		fmt.Println(err.Error())
+		http.Error(w, "Failed to save suggestion", http.StatusInternalServerError)
+		return
+	}
+}
+
+func clearSuggestionHandler(w http.ResponseWriter, r *http.Request) {
+	found, user_id, _ := getUserFromSession(r)
+	if !found {
+		http.Error(w, "Not logged in", http.StatusUnauthorized)
+		return
+	}
+	event_id, _, _ := getNextEvent()
+	_, err := db.Exec("DELETE FROM suggestions WHERE user_id=? AND event_id=?", user_id, event_id)
+	if err != nil {
 		fmt.Println(err.Error())
 	}
 }
@@ -701,16 +824,16 @@ func adminSuggestionHandler(w http.ResponseWriter, r *http.Request) {
 
 	event_id, _, _ := getNextEvent()
 
+	movie_id := r.FormValue("id")
 	title := r.FormValue("title")
 	year := r.FormValue("year")
 	runtime, _ := strconv.Atoi(r.FormValue("runtime"))
 	path := r.FormValue("path")
-	_, err := db.Exec("INSERT INTO suggestions (user_id, event_id, movie_title, movie_year, runtime, poster_url) VALUES (?,?,?,?,?,?);",
-		1, event_id, title, year, runtime, path)
+	_, err := db.Exec("INSERT INTO suggestions (user_id, event_id, movie_db_id, movie_title, movie_year, runtime, poster_url) VALUES (?,?,?,?,?,?,?);",
+		1, event_id, movie_id, title, year, runtime, path)
 	if err != nil {
 		fmt.Println("Fucky wucky", title, year, runtime, path)
 		fmt.Println(err.Error())
 		return
 	}
-
 }

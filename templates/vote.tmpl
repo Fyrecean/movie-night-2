@@ -1,6 +1,29 @@
 {{template "head" .IsSignedIn}}
 {{if .IsRSVPed}}
     <p>We watch the winner at {{.ShowTime}}</p>
+    {{if .Suggestion.Title}}
+    <h3 class="section-header">My Suggestion</h3>
+    <div>
+        <div hidden id="replace-confirmation">
+            <p>Are you sure?</p>
+            <p>Clearing your suggestion will clear all votes for the movie.</p>
+            <button onclick="onReplaceConfirmation()">Do it</button>
+            <button onclick="setReplacementMessage(false)">Nevermind</button>
+        </div>
+        <div id="my-suggestion" class="movie-row">
+                <img class="movie-poster" src="https://image.tmdb.org/t/p/w92{{.Suggestion.PosterURL}}" alt={{.Suggestion.Title}}/>
+                <div class="movie-title-box">
+                    <div class="movie-title-line"><span class="movie-title">{{.Suggestion.Title}}</span><span class="movie-year">({{.Suggestion.Year}})</span></div>
+                    <p class="movie-meta">{{.Suggestion.Runtime}} minutes</p>
+                </div>
+                <button id="replace-suggestion" onclick="setReplacementMessage(true)">Clear</button>
+            </div>
+        </div>
+        {{else}}
+        <h3 class="section-header">Suggest a Movie</h3>
+        <input id="movie-suggestion-search" type="text" onkeyup="onSearch('movie-suggestion-search', 'search-results')">
+        <div id="search-results"></div>
+    {{end}}
 {{else}}
     <p>RSVP to suggest a movie and vote.</p>
     <form id="rsvp-form" action="/api/rsvp/yes" method="POST">
@@ -10,6 +33,7 @@
     </form>
 {{end}}
 <div class="suggestions-margin">
+    <h3 class="section-header">Vote</h3>
     <div id="movie-suggestions">
         {{range .Movies}}
         <div class="movie-row">
@@ -37,5 +61,5 @@
         {{end}}
     </div>  
 </div>
-    {{template "foot"}}
-    <script src="/scripts/vote.js"></script>
+{{template "foot"}}
+<script src="/scripts/vote.js"></script>
