@@ -23,6 +23,8 @@ import (
 
 //var templates = template.Must(template.ParseFiles("templates/home.html"))
 
+const MovieAPIKey = "5214fb5def4b1a9c2282c6aad7b83ebb"
+
 var db *sql.DB
 
 func initDB() {
@@ -37,7 +39,7 @@ func initDB() {
 		//"INSERT OR IGNORE INTO events (event_id, event_time) VALUES (1, '" + time.Now().AddDate(0, 0, 1).Format(time.RFC3339) + "');" +
 		"CREATE TABLE IF NOT EXISTS reservations (event_id INTEGER, user_id INTEGER, PRIMARY KEY (event_id, user_id), FOREIGN KEY (event_id) REFERENCES events(event_id), FOREIGN KEY (user_id) REFERENCES users(user_id));" +
 		// "DROP TABLE suggestions; " +
-		"CREATE TABLE IF NOT EXISTS suggestions (suggestion_id INTEGER PRIMARY KEY ASC, event_id INTEGER, user_id INTEGER, movie_db_id TEXT, movie_title TEXT, movie_year TEXT, runtime INTEGER, poster_url TEXT, UNIQUE(user_id, event_id), FOREIGN KEY (event_id) REFERENCES events(event_id), FOREIGN KEY (user_id) REFERENCES users(user_id));" +
+		"CREATE TABLE IF NOT EXISTS suggestions (suggestion_id INTEGER PRIMARY KEY ASC, event_id INTEGER, user_id INTEGER, movie_db_id INTEGER, movie_title TEXT, movie_year TEXT, runtime INTEGER, poster_url TEXT, UNIQUE(user_id, event_id), FOREIGN KEY (event_id) REFERENCES events(event_id), FOREIGN KEY (user_id) REFERENCES users(user_id));" +
 		// "DROP TABLE votes;" +
 		"CREATE TABLE IF NOT EXISTS votes (user_id INTEGER, suggestion_id INTEGER, event_id INTEGER DEFAULT 0, vote INTEGER, PRIMARY KEY (user_id, suggestion_id) FOREIGN KEY (user_id) REFERENCES users(user_id), FOREIGN KEY (suggestion_id) REFERENCES suggestions(suggestion_id), FOREIGN KEY (event_id) REFERENCES events(event_id)); " +
 		"CREATE TRIGGER IF NOT EXISTS  delete_votes_after_suggestion_deletion AFTER DELETE ON suggestions FOR EACH ROW BEGIN DELETE FROM votes WHERE suggestion_id = OLD.suggestion_id; END;"
@@ -67,7 +69,7 @@ func main() {
 	http.HandleFunc("POST /api/logout", logoutHandler)
 	http.HandleFunc("POST /api/rsvp/{type}", rsvpHandler)
 	http.HandleFunc("/api/search/{query}", handleSearch)
-	http.HandleFunc("POST /api/suggest", suggestionHandler)
+	http.HandleFunc("POST /api/suggest/{id}", suggestionHandler)
 	http.HandleFunc("POST /api/clearSuggestion", clearSuggestionHandler)
 	http.HandleFunc("POST /api/vote/{suggestion}/{updown}", voteApiHandler)
 	http.HandleFunc("POST /api/otp", otpApiHandler)
@@ -506,7 +508,6 @@ func voteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	event_id, event_time, _ := getNextEvent()
-	fmt.Println(event_id)
 	found, user_id, _ := getUserFromSession(r)
 	if !found {
 		http.Error(w, "", http.StatusUnauthorized)
@@ -615,14 +616,17 @@ func voteApiHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-type MovieDB struct {
-	VoteCount int    `json:"vote_count"`
-	Title     string `json:"title"`
-	// Add other fields as needed
+type SearchResult struct {
+	Id               int    `json:"id"`
+	Title            string `json:"title"`
+	Year             string `json:"release_date"`
+	PosterURL        string `json:"poster_path"`
+	VoteCount        int    `json:"vote_count"`
+	AlreadySuggested bool   `json:"suggested"`
 }
 
-type MovieDBResponse struct {
-	Results []MovieDB `json:"results"`
+type SearchResponse struct {
+	Results []SearchResult `json:"results"`
 }
 
 func handleSearch(w http.ResponseWriter, r *http.Request) {
@@ -641,26 +645,51 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 	// Make the HTTP request
 	resp, err := http.Get(fullURL)
 	if err != nil {
-		log.Fatalf("Failed to make request: %v", err)
+		fmt.Println("getting search results", fullURL, err.Error())
+		fmt.Fprint(w, "[]")
+		return
 	}
 	defer resp.Body.Close()
 
 	// Check the status code
 	if resp.StatusCode != http.StatusOK {
-		log.Fatalf("Request failed with status code: %d", resp.StatusCode)
+		fmt.Println("search status code =", resp.StatusCode)
+		fmt.Fprint(w, "[]")
+		return
 	}
 
 	// Parse the JSON response
-	var data MovieDBResponse
+	var data SearchResponse
 	err = json.NewDecoder(resp.Body).Decode(&data)
 	if err != nil {
-		log.Fatalf("Failed to decode response: %v", err)
+		fmt.Println("decoding search results", data, err.Error())
+		fmt.Fprint(w, "[]")
+		return
+	}
+	event_id, _, _ := getNextEvent()
+	stmt := "SELECT movie_db_id FROM suggestions Where event_id = ?"
+	results, err := db.Query(stmt, event_id)
+	if err != nil {
+		fmt.Println("Getting existing suggestions", err.Error())
+		fmt.Fprint(w, "[]")
+		return
+	}
+
+	suggested := make(map[int]bool)
+	for results.Next() {
+		var movie_id int
+		results.Scan(&movie_id)
+		suggested[movie_id] = true
 	}
 
 	// Filter the results based on vote_count
-	var filteredResults []MovieDB
+	var filteredResults []SearchResult
 	for _, movie := range data.Results {
 		if movie.VoteCount > 100 {
+			if suggested[movie.Id] {
+				movie.AlreadySuggested = true
+			}
+			movie.Year = movie.Year[:4]
 			filteredResults = append(filteredResults, movie)
 		}
 	}
@@ -673,12 +702,16 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 		}
 		fmt.Fprintf(w, "%s", response)
 	} else {
-		response, err := json.Marshal(map[string]string{"message": "Movies not found"})
-		if err != nil {
-			log.Fatalf("Failed to marshal not found message: %v", err)
-		}
-		fmt.Printf("%s\n", response)
+		fmt.Fprint(w, "[]")
 	}
+}
+
+type MovieDBDetails struct {
+	Id        int    `json:"id"`
+	Title     string `json:"title"`
+	Year      string `json:"release_date"`
+	PosterURL string `json:"poster_path"`
+	Runtime   int    `json:"runtime"`
 }
 
 func suggestionHandler(w http.ResponseWriter, r *http.Request) {
@@ -693,18 +726,47 @@ func suggestionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	movie_id := r.FormValue("id")
-	title := r.FormValue("title")
-	year := r.FormValue("year")
-	runtime, _ := strconv.Atoi(r.FormValue("runtime"))
-	path := r.FormValue("path")
-	_, err := db.Exec("INSERT INTO suggestions (user_id, event_id, movie_db_id, movie_title, movie_year, runtime, poster_url) VALUES (?,?,?,?,?,?,?);",
-		1, event_id, movie_id, title, year, runtime, path)
+	movie_id := r.PathValue("id")
+
+	url := "https://api.themoviedb.org/3/movie/" + movie_id + "?api_key=" + MovieAPIKey
+
+	// Make the HTTP request
+	resp, err := http.Get(url)
 	if err != nil {
-		fmt.Println("Failed to save suggestion", movie_id, title, year, runtime, path)
-		fmt.Println(err.Error())
+		fmt.Println("getting movie details", url, err.Error())
+		http.Error(w, "Failed to download movie information", http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	// Check the status code
+	if resp.StatusCode != http.StatusOK {
+		fmt.Println("movie details status code =", resp.StatusCode)
+		http.Error(w, "Failed to download movie information", http.StatusInternalServerError)
+		return
+	}
+
+	var data MovieDBDetails
+	err = json.NewDecoder(resp.Body).Decode(&data)
+	if err != nil {
+		fmt.Println("decoding movie", data, err.Error())
+		http.Error(w, "Failed to download movie information", http.StatusInternalServerError)
+		return
+	}
+
+	result, err := db.Exec("INSERT OR REPLACE INTO suggestions (user_id, event_id, movie_db_id, movie_title, movie_year, runtime, poster_url) VALUES (?,?,?,?,?,?,?);",
+		user_id, event_id, data.Id, data.Title, data.Year[:4], data.Runtime, data.PosterURL)
+	if err != nil {
+		fmt.Println("Failed to save suggestion", data, err.Error())
 		http.Error(w, "Failed to save suggestion", http.StatusInternalServerError)
 		return
+	}
+	suggestion_id, _ := result.LastInsertId()
+
+	_, err = db.Exec("INSERT INTO votes (user_id, event_id, suggestion_id, vote) VALUES (?, ?, ?, 1)",
+		user_id, event_id, suggestion_id)
+	if err != nil {
+		fmt.Println("Failed to save vote after suggestion", err.Error())
 	}
 }
 
@@ -765,7 +827,7 @@ func adminHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p := tmpl_Admin{
-		MovieAPIKey:    "5214fb5def4b1a9c2282c6aad7b83ebb",
+		MovieAPIKey:    MovieAPIKey,
 		UpcomingEvents: upcomingEvents,
 	}
 	t.ExecuteTemplate(w, "admin.tmpl", p)

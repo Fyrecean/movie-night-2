@@ -1,4 +1,4 @@
-function debounce(callback, timeout = 300) {
+function debounce(callback, timeout = 400) {
     let timer;
     return (...args) => {
         clearTimeout(timer);
@@ -14,10 +14,40 @@ const doSearch = debounce(async (query, resultsElement) => {
     }
 
     j.forEach(val => {
-        const textElement = document.createTextNode(val.title);
-        const searchRowDiv = document.createElement("div")
-        searchRowDiv.appendChild(textElement);
-        searchRowDiv.classList.add("search-result")
+        const searchRowDiv = document.createElement("div");
+        searchRowDiv.classList.add("search-result");
+        searchRowDiv.classList.add("movie-row");
+
+        const posterElement = document.createElement("img");
+        posterElement.alt = val.title;
+        posterElement.src = `https://image.tmdb.org/t/p/w92${val.poster_path}`;
+        posterElement.classList.add("search-movie-poster");
+        searchRowDiv.appendChild(posterElement);
+
+        const titleDiv = document.createElement("div");
+        titleDiv.classList.add("movie-title-box");
+
+        const titleSpan = document.createElement("span");
+        titleSpan.textContent = val.title;
+        titleSpan.classList.add("movie-title");
+        const yearSpan = document.createElement("span");
+        yearSpan.textContent = val.release_date;
+        yearSpan.classList.add("movie-year");
+
+        titleDiv.appendChild(titleSpan);
+        titleDiv.appendChild(yearSpan);
+
+        //<div class="movie-title-line"><span class="movie-title">{{.Title}}</span><span class="movie-year">({{.Year}})</span></div>
+        
+        searchRowDiv.appendChild(titleDiv);
+        searchRowDiv.onclick = () => {
+            fetch(`/api/suggest/${val.id}`, {
+                method: "POST"
+            }).then(_ => {
+                location.reload();
+            });
+        }
+
         resultsElement.appendChild(searchRowDiv);
     });
 });
@@ -41,11 +71,11 @@ function onSearch(elementId, resultsId) {
 function setReplacementMessage(on) {
     const suggestionDiv = document.getElementById("my-suggestion");
     const confirmationDiv = document.getElementById("replace-confirmation");
-    suggestionDiv.hidden = on;
     confirmationDiv.hidden = !on;
+    suggestionDiv.style.display = on ? "none" : "grid";
 }
 function onReplaceConfirmation() {
-    fetch("/api/clearSuggestion", {"method": "POST"});
+    fetch("/api/clearSuggestion", {"method": "POST"}).then(_ => location.reload());
 }
 
 function onVote(voteType, suggestion_id) {
