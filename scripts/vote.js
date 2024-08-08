@@ -40,12 +40,17 @@ const doSearch = debounce(async (query, resultsElement) => {
         //<div class="movie-title-line"><span class="movie-title">{{.Title}}</span><span class="movie-year">({{.Year}})</span></div>
         
         searchRowDiv.appendChild(titleDiv);
-        searchRowDiv.onclick = () => {
-            fetch(`/api/suggest/${val.id}`, {
-                method: "POST"
-            }).then(_ => {
-                location.reload();
-            });
+        if (!val.suggested) {
+            searchRowDiv.onclick = () => {
+                fetch(`/api/suggest/${val.id}`, {
+                    method: "POST"
+                }).then(_ => {
+                    location.reload();
+                });
+            }
+        } else {
+            searchRowDiv.classList.add("suggested-result");
+            searchRowDiv.appendChild(document.createTextNode("Already suggested"));
         }
 
         resultsElement.appendChild(searchRowDiv);

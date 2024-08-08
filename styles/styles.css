@@ -300,7 +300,11 @@ button#replace-suggestion {
     color: hsl(34, 57%, 20%)
 }
 
-.search-result:hover {
+.suggested-result {
+    background-color: hsl(34, 57%, 59%);
+}
+
+.search-result:hover:not(.suggested-result) {
     background-color: hsl(34, 57%, 80%);
 }
 

@@ -21,7 +21,7 @@
         </div>
         {{else}}
         <h3 class="section-header">Suggest a Movie</h3>
-        <input id="movie-suggestion-search" type="text" onkeyup="onSearch('movie-suggestion-search', 'search-results')">
+        <input placeholder="Search for a movie title" title="movie search" id="movie-suggestion-search" type="search" autocomplete="off" onkeyup="onSearch('movie-suggestion-search', 'search-results')">
         <div id="search-results"></div>
     {{end}}
 {{else}}
