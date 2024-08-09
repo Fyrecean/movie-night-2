@@ -84,6 +84,11 @@ function onReplaceConfirmation() {
 }
 
 function onVote(voteType, suggestion_id) {
+    voteEl = document.getElementById(`vote-${suggestion_id}`);
+    dir = voteEl.getAttribute("myVote");
+    if ((voteType == "down" && dir == -1) || (voteType == "up" && dir == 1)) {
+        voteType = "zero";
+    }
     fetch(`/api/vote/${suggestion_id}/${voteType}`, {method: "POST"}).then(_ => location.reload())
 }
 
@@ -91,7 +96,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const rsvp_form = document.getElementById("rsvp-form");
     if (rsvp_form) registerSubmitForm(rsvp_form);   
 
-    const myVotes = document.getElementsByClassName("movie-votes")
+    const myVotes = document.getElementsByClassName("movie-votes");
     for(let i = 0; i < myVotes.length; i++) {
         const el = myVotes.item(i);
         const myVote = el.getAttribute("myVote");

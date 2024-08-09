@@ -491,11 +491,12 @@ type Movie struct {
 }
 
 type tmpl_Vote struct {
-	IsSignedIn bool
-	IsRSVPed   bool
-	ShowTime   string
-	Movies     []Movie
-	Suggestion Movie
+	IsSignedIn         bool
+	IsRSVPed           bool
+	SuggestionsAllowed bool
+	ShowTime           string
+	Movies             []Movie
+	Suggestion         Movie
 }
 
 func voteHandler(w http.ResponseWriter, r *http.Request) {
@@ -558,10 +559,11 @@ func voteHandler(w http.ResponseWriter, r *http.Request) {
 	})
 
 	p := tmpl_Vote{
-		IsSignedIn: true,
-		IsRSVPed:   userIsRSVPed(event_id, user_id),
-		ShowTime:   event_time.Format("3:04PM"),
-		Movies:     movies,
+		IsSignedIn:         true,
+		IsRSVPed:           userIsRSVPed(event_id, user_id),
+		SuggestionsAllowed: time.Now().Day() < event_time.Day(),
+		ShowTime:           event_time.Format("3:04PM"),
+		Movies:             movies,
 	}
 	for i := 0; i < len(movies); i++ {
 		if movies[i].SuggestingUser == user_id {
@@ -586,6 +588,8 @@ func voteApiHandler(w http.ResponseWriter, r *http.Request) {
 		vote = 1
 	case "down":
 		vote = -1
+	case "zero":
+		vote = 0
 	default:
 		http.Error(w, "Vote must be up or down", http.StatusBadRequest)
 		return
