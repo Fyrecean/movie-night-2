@@ -509,6 +509,7 @@ func voteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	event_id, event_time, _ := getNextEvent()
+	fmt.Println(event_id)
 	found, user_id, _ := getUserFromSession(r)
 	if !found {
 		http.Error(w, "", http.StatusUnauthorized)
@@ -534,8 +535,9 @@ func voteHandler(w http.ResponseWriter, r *http.Request) {
 		"LEFT JOIN  " +
 		"	v ON v.suggestion_id=s.suggestion_id " +
 		"LEFT JOIN " +
-		"	u ON u.suggestion_id=v.suggestion_id"
-	rows, err := db.Query(stmt, event_id, event_id, user_id)
+		"	u ON u.suggestion_id=v.suggestion_id " +
+		"WHERE s.event_id=?"
+	rows, err := db.Query(stmt, event_id, event_id, user_id, event_id)
 	if err != nil {
 		fmt.Println("Loading suggestions failed", err)
 		return
