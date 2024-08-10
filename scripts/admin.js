@@ -78,7 +78,7 @@ document.getElementById('schedule-form').addEventListener('submit', function(eve
     const hour = document.getElementById('hour').value.padStart(2, '0');
     const minute = document.getElementById('minute').value.padStart(2, '0');
 
-    const rfc3339String = `${year}-${month}-${day}T${hour}:${minute}:00Z`;
+    const rfc3339String = `${year}-${month}-${day}T${hour}:${minute}:00-07:00`;
     const url = `/api/admin/schedule-event/${rfc3339String}`;
 
     fetch(url, {

@@ -186,7 +186,7 @@ func parseTimeToEventDate(event_time time.Time) string {
 }
 
 func getNextEvent() (event_id int, event_time time.Time, err error) {
-	q := db.QueryRow("SELECT event_id, event_time FROM events WHERE event_time > ? ORDER BY event_time ASC LIMIT 1;", time.Now().Format(time.RFC3339))
+	q := db.QueryRow("SELECT event_id, event_time FROM events WHERE event_time > ? ORDER BY event_time ASC LIMIT 1;", time.Now().Add(-time.Hour).Format(time.RFC3339))
 	var event_time_str string
 	err = q.Scan(&event_id, &event_time_str)
 	if err != nil {
@@ -376,7 +376,7 @@ type tmpl_Home struct {
 func homeHandler(w http.ResponseWriter, r *http.Request) {
 	//err := templates.ExecuteTemplate(w, "home.html", Page{Body: "Hello World!"})
 
-	q, err := db.Query("SELECT event_id, event_time FROM events WHERE event_time > ? ORDER BY event_time ASC;", time.Now().Format(time.RFC3339))
+	q, err := db.Query("SELECT event_id, event_time FROM events WHERE event_time > ? ORDER BY event_time ASC;", time.Now().Add(-time.Hour).Format(time.RFC3339))
 	if err != nil || !q.Next() {
 		// http.Error(w, err.Error(), http.StatusInternalServerError)
 		// fmt.Println("rsvp handler - Failed to retrieve next event:", err)
@@ -494,6 +494,7 @@ type tmpl_Vote struct {
 	IsSignedIn         bool
 	IsRSVPed           bool
 	SuggestionsAllowed bool
+	VotingAllowed      bool
 	ShowTime           string
 	Movies             []Movie
 	Suggestion         Movie
@@ -509,7 +510,6 @@ func voteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	event_id, event_time, _ := getNextEvent()
-	fmt.Println(event_id)
 	found, user_id, _ := getUserFromSession(r)
 	if !found {
 		http.Error(w, "", http.StatusUnauthorized)
@@ -560,10 +560,12 @@ func voteHandler(w http.ResponseWriter, r *http.Request) {
 		return movies[i].Score > movies[j].Score
 	})
 
+	now := time.Now()
 	p := tmpl_Vote{
 		IsSignedIn:         true,
 		IsRSVPed:           userIsRSVPed(event_id, user_id),
-		SuggestionsAllowed: time.Now().Day() < event_time.Day(),
+		SuggestionsAllowed: !(now.Month() == event_time.Month() && now.Day() == event_time.Day()),
+		VotingAllowed:      now.Compare(event_time) < 0,
 		ShowTime:           event_time.Format("3:04PM"),
 		Movies:             movies,
 	}
@@ -597,14 +599,19 @@ func voteApiHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	_, event_time, _ := getNextEvent()
+	if event_time.Compare(time.Now()) < 0 {
+		return
+	}
+
 	stmt :=
 		"INSERT OR REPLACE INTO votes (suggestion_id, user_id, vote, event_id) SELECT suggestion_id, user_id, ?, event_id FROM ( " +
 			"WITH event AS ( " +
 			"	SELECT event_id " +
 			"	FROM events " +
-			"	WHERE event_time > ? " +
-			"	ORDER BY event_time ASC " +
-			"	LIMIT 1 " +
+			"       WHERE event_time > ? " +
+			"       ORDER BY event_time ASC " +
+			"       LIMIT 1 " +
 			") SELECT suggestions.suggestion_id, sessions.user_id, event.event_id FROM suggestions " +
 			"INNER JOIN " +
 			"	event ON suggestions.event_id=event.event_id " +
